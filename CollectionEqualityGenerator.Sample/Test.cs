@@ -13,7 +13,11 @@ partial record LotOfLists(
 	ICollection Something,
 	IEnumerable<int> Numbers4,
 	int Singleton,
-	int[] Array);
+	int[] Array) {
+	private IEnumerable<char> notIgnored;
+	
+	public IEnumerable<char> Ignored => notIgnored;
+}
 
 [CollectionEquality]
 partial record Foo(List<int> Numbers);

@@ -22,6 +22,7 @@ public sealed class CollectionEqualityGenerator : IIncrementalGenerator {
 		globalNamespaceStyle: SymbolDisplayGlobalNamespaceStyle.Omitted);
 	
 	[SuppressMessage("ReSharper", "ConvertToLambdaExpression")]
+	[SuppressMessage("ReSharper", "InvertIf")]
 	public void Initialize(IncrementalGeneratorInitializationContext ctx) {
 	    var provider = ctx.SyntaxProvider.ForAttributeWithMetadataName(
 		    AttributesGenerator.CollectionEqualityAttributeFullyQualifiedMetadataName,
@@ -42,6 +43,18 @@ public sealed class CollectionEqualityGenerator : IIncrementalGenerator {
 					    // They often have weird/uncompilable names, such as:
 					    // * <Numbers>k__BackingField
 					    return !symbol.IsImplicitlyDeclared;
+				    })
+				    .Where(symbol => {
+					    // No property getters/setters should be explicit.
+					    if (symbol is IPropertySymbol propertySymbol) {
+						    if (!propertySymbol.GetMethod?.IsImplicitlyDeclared ?? true)
+							    return false;
+						    
+						    if (!propertySymbol.SetMethod?.IsImplicitlyDeclared ?? true)
+							    return false;
+					    }
+					    
+					    return true;
 				    })
 				    .Select(symbol => (Symbol: symbol, Type: GetType(symbol)!))
 				    .Select(symbolType => new RecordPropertyContext(compilation, symbolType))
