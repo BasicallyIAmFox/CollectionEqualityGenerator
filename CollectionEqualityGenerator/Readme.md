@@ -1,4 +1,6 @@
 hi
+this thing definitely should not be used in production
+but hey atleast it works
 
 ```
 [CollectionEquality]
