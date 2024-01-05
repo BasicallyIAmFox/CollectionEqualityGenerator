@@ -11,7 +11,8 @@ partial record LotOfLists(
 	IReadOnlyList<int> Numbers2,
 	IReadOnlyCollection<int> Numbers3,
 	ICollection Something,
-	IEnumerable<int> Numbers4);
+	IEnumerable<int> Numbers4,
+	int Singleton);
 
 [CollectionEquality]
 partial record Foo(List<int> Numbers);
