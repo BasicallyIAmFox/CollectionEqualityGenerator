@@ -102,8 +102,8 @@ public sealed class CollectionEqualityGenerator : IIncrementalGenerator {
 						    writer.WriteLine('{');
 						    writer.Indent++;
 						    
-						    writer.WriteLine($"var left = this.{property.Name}.GetEnumerator();");
-						    writer.WriteLine($"var right = this.{property.Name}.GetEnumerator();");
+						    writer.WriteLine($"using var left = this.{property.Name}.GetEnumerator();");
+						    writer.WriteLine($"using var right = this.{property.Name}.GetEnumerator();");
 						    writer.WriteLine("var leftMove = left.MoveNext();");
 						    writer.WriteLine("var rightMove = left.MoveNext();");
 						    
@@ -149,10 +149,16 @@ public sealed class CollectionEqualityGenerator : IIncrementalGenerator {
 						    
 						    writer.WriteLine('{');
 						    writer.Indent++;
-						    
-						    writer.WriteLine($"var left = this.{property.Name}.GetEnumerator();");
-						    writer.WriteLine($"var right = other.{property.Name}.GetEnumerator();");
-						    
+
+						    if (property.PropertyType is RecordPropertyType.IEnumerable_1) {
+							    writer.WriteLine($"using var left = this.{property.Name}.GetEnumerator();");
+							    writer.WriteLine($"using var right = other.{property.Name}.GetEnumerator();");
+						    }
+						    else { // IEnumerable, for some reason, doesn't implements IDisposable
+							    writer.WriteLine($"var left = this.{property.Name}.GetEnumerator();");
+							    writer.WriteLine($"var right = other.{property.Name}.GetEnumerator();");
+						    }
+
 						    writer.WriteLine("while (left.MoveNext() && right.MoveNext()) {");
 						    writer.Indent++;
 						    
