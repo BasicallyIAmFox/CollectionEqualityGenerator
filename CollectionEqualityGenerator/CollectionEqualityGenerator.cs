@@ -1,4 +1,20 @@
-﻿using CollectionEqualityGenerator.DataStructures;
+﻿//
+//    Copyright 2023-2024 BasicallyIAmFox
+//
+//    Licensed under the Apache License, Version 2.0 (the "License")
+//    you may not use this file except in compliance with the License.
+//    You may obtain a copy of the License at
+//
+//        http://www.apache.org/licenses/LICENSE-2.0
+//
+//    Unless required by applicable law or agreed to in writing, software
+//    distributed under the License is distributed on an "AS IS" BASIS,
+//    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//    See the License for the specific language governing permissions and
+//    limitations under the License.
+//
+
+using CollectionEqualityGenerator.DataStructures;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using System;
@@ -15,318 +31,318 @@ public sealed class CollectionEqualityGenerator : IIncrementalGenerator {
 		typeQualificationStyle: SymbolDisplayTypeQualificationStyle.NameAndContainingTypes,
 		genericsOptions: SymbolDisplayGenericsOptions.None,
 		globalNamespaceStyle: SymbolDisplayGlobalNamespaceStyle.Omitted);
-	
+
 	private static SymbolDisplayFormat QualifiedIncludeGenerics { get; } = new(
 		typeQualificationStyle: SymbolDisplayTypeQualificationStyle.NameOnly,
 		genericsOptions: SymbolDisplayGenericsOptions.IncludeTypeParameters,
 		globalNamespaceStyle: SymbolDisplayGlobalNamespaceStyle.Omitted);
-	
+
 	[SuppressMessage("ReSharper", "ConvertToLambdaExpression")]
 	[SuppressMessage("ReSharper", "InvertIf")]
 	public void Initialize(IncrementalGeneratorInitializationContext ctx) {
-	    var provider = ctx.SyntaxProvider.ForAttributeWithMetadataName(
-		    AttributesGenerator.CollectionEqualityAttributeFullyQualifiedMetadataName,
-		    static (node, _) => node.IsKind(SyntaxKind.RecordDeclaration) ||
-		                        node.IsKind(SyntaxKind.RecordStructDeclaration),
-		    static (ctx, _) => {
-			    var symbol = (INamedTypeSymbol)ctx.TargetSymbol;
-			    var compilation = ctx.SemanticModel.Compilation;
+		var provider = ctx.SyntaxProvider.ForAttributeWithMetadataName(
+			AttributesGenerator.CollectionEqualityAttributeFullyQualifiedMetadataName,
+			static (node, _) => node.IsKind(SyntaxKind.RecordDeclaration) ||
+								node.IsKind(SyntaxKind.RecordStructDeclaration),
+			static (ctx, _) => {
+				var symbol = (INamedTypeSymbol)ctx.TargetSymbol;
+				var compilation = ctx.SemanticModel.Compilation;
 
-			    string symbolName = symbol.ToDisplayString(QualifiedOmittedGlobalAndGenerics);
-			    string symbolTypeName = symbol.ToDisplayString(QualifiedIncludeGenerics);
-			    var symbolHierarchy = symbol.RetrieveHierarchyTree();
-			    
-			    var symbolMembersArray = symbol.GetMembers()
-				    .Where(symbol => symbol is IFieldSymbol or IPropertySymbol)
-				    .Where(symbol => {
-					    // We don't want implicit (aka compiler generated) symbols.
-					    // They often have weird/uncompilable names, such as:
-					    // * <Numbers>k__BackingField
-					    return !symbol.IsImplicitlyDeclared;
-				    })
-				    .Where(symbol => {
-					    // No property getters/setters should be explicit.
-					    if (symbol is IPropertySymbol propertySymbol) {
-						    if (!propertySymbol.GetMethod?.IsImplicitlyDeclared ?? true)
-							    return false;
-						    
-						    if (!propertySymbol.SetMethod?.IsImplicitlyDeclared ?? true)
-							    return false;
-					    }
-					    
-					    return true;
-				    })
-				    .Select(symbol => (Symbol: symbol, Type: GetType(symbol)!))
-				    .Select(symbolType => new RecordPropertyContext(compilation, symbolType))
-				    .ToImmutableArray();
+				string symbolName = symbol.ToDisplayString(QualifiedOmittedGlobalAndGenerics);
+				string symbolTypeName = symbol.ToDisplayString(QualifiedIncludeGenerics);
+				var symbolHierarchy = symbol.RetrieveHierarchyTree();
 
-			    return new CollectionEqualityProvider(symbolName, symbolTypeName, symbolHierarchy, symbolMembersArray);
-		    });
+				var symbolMembersArray = symbol.GetMembers()
+					.Where(symbol => symbol is IFieldSymbol or IPropertySymbol)
+					.Where(symbol => {
+						// We don't want implicit (aka compiler generated) symbols.
+						// They often have weird/uncompilable names, such as:
+						// * <Numbers>k__BackingField
+						return !symbol.IsImplicitlyDeclared;
+					})
+					.Where(symbol => {
+						// No property getters/setters should be explicit.
+						if (symbol is IPropertySymbol propertySymbol) {
+							if (!propertySymbol.GetMethod?.IsImplicitlyDeclared ?? true)
+								return false;
 
-	    ctx.RegisterSourceOutput(provider, static (context, sourceProvider) => {
-		    context.AddSource(sourceProvider.Name, GenerateText(sourceProvider));
-	    });
-	    
-	    return;
+							if (!propertySymbol.SetMethod?.IsImplicitlyDeclared ?? true)
+								return false;
+						}
 
-	    static string GenerateText(in CollectionEqualityProvider provider) {
-		    var writer = new IndentedStringBuilder();
-		    
-		    writer.WriteLine(Constants.AutoGeneratedComment);
-		    
-		    writer.WriteLine("#nullable enable");
+						return true;
+					})
+					.Select(symbol => (Symbol: symbol, Type: GetType(symbol)!))
+					.Select(symbolType => new RecordPropertyContext(compilation, symbolType))
+					.ToImmutableArray();
 
-		    using (writer.WriteHierarchyInfo(provider.Hierarchy)) {
-			    writer.WriteLine($"public virtual bool Equals({provider.TypeName}? other)");
-			    using (writer.WriteBlock()) {
-				    writer.WriteLine("if (other == null)");
-				    using (writer.WriteIndent())
-					    writer.WriteLine("return false;");
+				return new CollectionEqualityProvider(symbolName, symbolTypeName, symbolHierarchy, symbolMembersArray);
+			});
 
-				    foreach (var property in provider.RecordProperties)
-					    switch (property.PropertyType) {
-						    case RecordPropertyType.Normal:
-							    WriteNormalPropertyEquals(writer, in property);
-							    break;
-						    case RecordPropertyType.IEnumerable:
-						    case RecordPropertyType.IEnumerable_1:
-							    WriteIEnumerablePropertyEquals(writer, in property);
-							    break;
-						    case RecordPropertyType.ICollection:
-							    WriteICollectionPropertyEquals(writer, in property);
-							    break;
-						    case RecordPropertyType.IReadOnlyCollection_1:
-							    WriteIReadOnlyCollectionPropertyEquals(writer, in property);
-							    break;
-						    case RecordPropertyType.IReadOnlyList_1:
-							    WriteIReadOnlyListPropertyEquals(writer, in property);
-							    break;
-						    case RecordPropertyType.Array:
-							    WriteArrayPropertyEquals(writer, in property);
-							    break;
-						    default:
-							    throw new ArgumentOutOfRangeException();
-					    }
+		ctx.RegisterSourceOutput(provider, static (context, sourceProvider) => {
+			context.AddSource(sourceProvider.Name, GenerateText(sourceProvider));
+		});
 
-				    writer.WriteLine("return true;");
-			    }
-			    
-			    writer.WriteLine();
-			    
-			    writer.WriteLine("public override int GetHashCode()");
-			    using (writer.WriteBlock()) {
-				    writer.WriteLine("const int favoriteNumber = -1521134295;");
-				    writer.WriteLine("int hashCode = 0;");
+		return;
 
-				    foreach (var property in provider.RecordProperties)
-					    switch (property.PropertyType) {
-						    case RecordPropertyType.Normal:
-							    WriteNormalPropertyGetHashCode(writer, in property);
-							    break;
-						    case RecordPropertyType.IEnumerable:
-						    case RecordPropertyType.IEnumerable_1:
-							    WriteIEnumerablePropertyGetHashCode(writer, in property);
-							    break;
-						    case RecordPropertyType.ICollection:
-							    WriteICollectionPropertyGetHashCode(writer, in property);
-							    break;
-						    case RecordPropertyType.IReadOnlyCollection_1:
-							    WriteIReadOnlyCollectionPropertyGetHashCode(writer, in property);
-							    break;
-						    case RecordPropertyType.IReadOnlyList_1:
-							    WriteIReadOnlyListPropertyGetHashCode(writer, in property);
-							    break;
-						    case RecordPropertyType.Array:
-							    WriteArrayPropertyGetHashCode(writer, in property);
-							    break;
-						    default:
-							    throw new ArgumentOutOfRangeException();
-					    }
-				    
-				    writer.WriteLine("return hashCode;");
-			    }
-		    }
-		    
-		    return writer.ToString();
-	    }
+		static string GenerateText(in CollectionEqualityProvider provider) {
+			var writer = new IndentedStringBuilder();
 
-	    static void WriteNormalPropertyEquals(IndentedStringBuilder writer, in RecordPropertyContext ctx) {
-		    writer.WriteLine($"if (!global::System.Collections.Generic.EqualityComparer<{ctx.TypeName}>.Default.Equals(this.{ctx.Name}, other.{ctx.Name}))");
-		    using (writer.WriteIndent())
-			    writer.WriteLine("return false;");
-	    }
+			writer.WriteLine(Constants.AutoGeneratedComment);
 
-	    static void WriteIEnumerablePropertyEquals(IndentedStringBuilder writer, in RecordPropertyContext ctx) {
-		    using (writer.WriteBlock()) {
-			    writer.WriteLine($"using var left = this.{ctx.Name}.GetEnumerator();");
-			    writer.WriteLine($"using var right = other.{ctx.Name}.GetEnumerator();");
-			    
-			    writer.WriteLine("var leftMove = left.MoveNext();");
-			    writer.WriteLine("var rightMove = right.MoveNext();");
-			    
-			    writer.WriteLine("while (leftMove && rightMove)");
-			    using (writer.WriteBlock()) {
-				    if (ctx.SpecialInfo is not null) {
-					    writer.WriteLine($"if (!global::System.Collections.Generic.EqualityComparer<{ctx.SpecialInfo}>.Default.Equals(left.Current, right.Current))");
-					    using (writer.WriteIndent())
-						    writer.WriteLine("return false;");
-				    }
-				    else {
-					    writer.WriteLine("if (object.Equals(left.Current, right.Current))");
-					    using (writer.WriteIndent())
-						    writer.WriteLine("return false;");
-				    }
-				    
-				    writer.WriteLine("leftMove = left.MoveNext();");
-				    writer.WriteLine("rightMove = right.MoveNext();");
-			    }
-			    
-			    writer.WriteLine("if (leftMove ^ rightMove)");
-			    using (writer.WriteIndent())
-				    writer.WriteLine("return false;");
-		    }
-	    }
+			writer.WriteLine("#nullable enable");
 
-	    static void WriteICollectionPropertyEquals(IndentedStringBuilder writer, in RecordPropertyContext ctx) {
-		    writer.WriteLine($"if (this.{ctx.Name}.Count != other.{ctx.Name}.Count)");
-		    using (writer.WriteIndent())
-			    writer.WriteLine("return false;");
+			using (writer.WriteHierarchyInfo(provider.Hierarchy)) {
+				writer.WriteLine($"public virtual bool Equals({provider.TypeName}? other)");
+				using (writer.WriteBlock()) {
+					writer.WriteLine("if (other == null)");
+					using (writer.WriteIndent())
+						writer.WriteLine("return false;");
 
-		    using (writer.WriteBlock()) {
-			    writer.WriteLine($"var left = this.{ctx.Name}.GetEnumerator();");
-			    writer.WriteLine($"var right = other.{ctx.Name}.GetEnumerator();");
-			    
-			    writer.WriteLine("while (left.MoveNext() && right.MoveNext())");
-			    using (writer.WriteBlock()) {
-				    writer.WriteLine("if (!object.Equals(left.Current, right.Current))");
-				    using (writer.WriteIndent())
-					    writer.WriteLine("return false;");
-			    }
-			    
-			    writer.WriteLine("(left as global::System.IDisposable)?.Dispose();");
-			    writer.WriteLine("(right as global::System.IDisposable)?.Dispose();");
-		    }
-	    }
-	    
-	    static void WriteIReadOnlyCollectionPropertyEquals(IndentedStringBuilder writer, in RecordPropertyContext ctx) {
-		    writer.WriteLine($"if (this.{ctx.Name}.Count != other.{ctx.Name}.Count)");
-		    using (writer.WriteIndent())
-			    writer.WriteLine("return false;");
+					foreach (var property in provider.RecordProperties)
+						switch (property.PropertyType) {
+							case RecordPropertyType.Normal:
+								WriteNormalPropertyEquals(writer, in property);
+								break;
+							case RecordPropertyType.IEnumerable:
+							case RecordPropertyType.IEnumerable_1:
+								WriteIEnumerablePropertyEquals(writer, in property);
+								break;
+							case RecordPropertyType.ICollection:
+								WriteICollectionPropertyEquals(writer, in property);
+								break;
+							case RecordPropertyType.IReadOnlyCollection_1:
+								WriteIReadOnlyCollectionPropertyEquals(writer, in property);
+								break;
+							case RecordPropertyType.IReadOnlyList_1:
+								WriteIReadOnlyListPropertyEquals(writer, in property);
+								break;
+							case RecordPropertyType.Array:
+								WriteArrayPropertyEquals(writer, in property);
+								break;
+							default:
+								throw new ArgumentOutOfRangeException();
+						}
 
-		    using (writer.WriteBlock()) {
-			    writer.WriteLine($"using var left = this.{ctx.Name}.GetEnumerator();");
-			    writer.WriteLine($"using var right = other.{ctx.Name}.GetEnumerator();");
-			    
-			    writer.WriteLine("while (left.MoveNext() && right.MoveNext())");
-			    using (writer.WriteBlock()) {
-				    writer.WriteLine($"if (!global::System.Collections.Generic.EqualityComparer<{ctx.SpecialInfo}>.Default.Equals(left.Current, right.Current))");
-				    using (writer.WriteIndent())
-					    writer.WriteLine("return false;");
-			    }
-		    }
-	    }
-	    
-	    static void WriteIReadOnlyListPropertyEquals(IndentedStringBuilder writer, in RecordPropertyContext ctx) {
-		    writer.WriteLine($"if (this.{ctx.Name}.Count != other.{ctx.Name}.Count)");
-		    using (writer.WriteIndent())
-			    writer.WriteLine("return false;");
+					writer.WriteLine("return true;");
+				}
 
-		    writer.WriteLine($"for (int i = 0, c = this.{ctx.Name}.Count; i < c; i++)");
-		    using (writer.WriteBlock()) {
-			    writer.WriteLine($"if (!global::System.Collections.Generic.EqualityComparer<{ctx.SpecialInfo}>.Default.Equals(this.{ctx.Name}[i], other.{ctx.Name}[i]))");
-			    using (writer.WriteIndent())
-				    writer.WriteLine("return false;");
-		    }
-	    }
-	    
-	    static void WriteArrayPropertyEquals(IndentedStringBuilder writer, in RecordPropertyContext ctx) {
-		    writer.WriteLine($"if (this.{ctx.Name}.Length != other.{ctx.Name}.Length)");
-		    using (writer.WriteIndent())
-			    writer.WriteLine("return false;");
+				writer.WriteLine();
 
-		    using (writer.WriteBlock()) {
-			    writer.WriteLine($"var left = this.{ctx.Name}.GetEnumerator();");
-			    writer.WriteLine($"var right = other.{ctx.Name}.GetEnumerator();");
-			    
-			    writer.WriteLine("while (left.MoveNext() && right.MoveNext())");
-			    using (writer.WriteBlock()) {
-				    writer.WriteLine("if (!object.Equals(left.Current, right.Current))");
-				    using (writer.WriteIndent())
-					    writer.WriteLine("return false;");
-			    }
-		    }
-	    }
+				writer.WriteLine("public override int GetHashCode()");
+				using (writer.WriteBlock()) {
+					writer.WriteLine("const int favoriteNumber = -1521134295;");
+					writer.WriteLine("int hashCode = 0;");
 
-	    static void WriteNormalPropertyGetHashCode(TextWriter writer, in RecordPropertyContext ctx) {
-		    writer.WriteLine($"hashCode += global::System.Collections.Generic.EqualityComparer<{ctx.TypeName}>.Default.GetHashCode(this.{ctx.Name}) * favoriteNumber;");
-	    }
-	    
-	    static void WriteIEnumerablePropertyGetHashCode(IndentedStringBuilder writer, in RecordPropertyContext ctx) {
-		    writer.WriteLine($"if (this.{ctx.Name} != null)");
-		    using (writer.WriteBlock()) {
-			    writer.WriteLine($"using var enumerator = this.{ctx.Name}.GetEnumerator();");
-			    
-			    writer.WriteLine("while (enumerator.MoveNext())");
-			    // ReSharper disable once RemoveRedundantBraces
-			    using (writer.WriteBlock()) {
-				    // ReSharper disable once ConvertIfStatementToConditionalTernaryExpression
-				    if (ctx.SpecialInfo is not null)
+					foreach (var property in provider.RecordProperties)
+						switch (property.PropertyType) {
+							case RecordPropertyType.Normal:
+								WriteNormalPropertyGetHashCode(writer, in property);
+								break;
+							case RecordPropertyType.IEnumerable:
+							case RecordPropertyType.IEnumerable_1:
+								WriteIEnumerablePropertyGetHashCode(writer, in property);
+								break;
+							case RecordPropertyType.ICollection:
+								WriteICollectionPropertyGetHashCode(writer, in property);
+								break;
+							case RecordPropertyType.IReadOnlyCollection_1:
+								WriteIReadOnlyCollectionPropertyGetHashCode(writer, in property);
+								break;
+							case RecordPropertyType.IReadOnlyList_1:
+								WriteIReadOnlyListPropertyGetHashCode(writer, in property);
+								break;
+							case RecordPropertyType.Array:
+								WriteArrayPropertyGetHashCode(writer, in property);
+								break;
+							default:
+								throw new ArgumentOutOfRangeException();
+						}
+
+					writer.WriteLine("return hashCode;");
+				}
+			}
+
+			return writer.ToString();
+		}
+
+		static void WriteNormalPropertyEquals(IndentedStringBuilder writer, in RecordPropertyContext ctx) {
+			writer.WriteLine($"if (!global::System.Collections.Generic.EqualityComparer<{ctx.TypeName}>.Default.Equals(this.{ctx.Name}, other.{ctx.Name}))");
+			using (writer.WriteIndent())
+				writer.WriteLine("return false;");
+		}
+
+		static void WriteIEnumerablePropertyEquals(IndentedStringBuilder writer, in RecordPropertyContext ctx) {
+			using (writer.WriteBlock()) {
+				writer.WriteLine($"using var left = this.{ctx.Name}.GetEnumerator();");
+				writer.WriteLine($"using var right = other.{ctx.Name}.GetEnumerator();");
+
+				writer.WriteLine("var leftMove = left.MoveNext();");
+				writer.WriteLine("var rightMove = right.MoveNext();");
+
+				writer.WriteLine("while (leftMove && rightMove)");
+				using (writer.WriteBlock()) {
+					if (ctx.SpecialInfo is not null) {
+						writer.WriteLine($"if (!global::System.Collections.Generic.EqualityComparer<{ctx.SpecialInfo}>.Default.Equals(left.Current, right.Current))");
+						using (writer.WriteIndent())
+							writer.WriteLine("return false;");
+					}
+					else {
+						writer.WriteLine("if (object.Equals(left.Current, right.Current))");
+						using (writer.WriteIndent())
+							writer.WriteLine("return false;");
+					}
+
+					writer.WriteLine("leftMove = left.MoveNext();");
+					writer.WriteLine("rightMove = right.MoveNext();");
+				}
+
+				writer.WriteLine("if (leftMove ^ rightMove)");
+				using (writer.WriteIndent())
+					writer.WriteLine("return false;");
+			}
+		}
+
+		static void WriteICollectionPropertyEquals(IndentedStringBuilder writer, in RecordPropertyContext ctx) {
+			writer.WriteLine($"if (this.{ctx.Name}.Count != other.{ctx.Name}.Count)");
+			using (writer.WriteIndent())
+				writer.WriteLine("return false;");
+
+			using (writer.WriteBlock()) {
+				writer.WriteLine($"var left = this.{ctx.Name}.GetEnumerator();");
+				writer.WriteLine($"var right = other.{ctx.Name}.GetEnumerator();");
+
+				writer.WriteLine("while (left.MoveNext() && right.MoveNext())");
+				using (writer.WriteBlock()) {
+					writer.WriteLine("if (!object.Equals(left.Current, right.Current))");
+					using (writer.WriteIndent())
+						writer.WriteLine("return false;");
+				}
+
+				writer.WriteLine("(left as global::System.IDisposable)?.Dispose();");
+				writer.WriteLine("(right as global::System.IDisposable)?.Dispose();");
+			}
+		}
+
+		static void WriteIReadOnlyCollectionPropertyEquals(IndentedStringBuilder writer, in RecordPropertyContext ctx) {
+			writer.WriteLine($"if (this.{ctx.Name}.Count != other.{ctx.Name}.Count)");
+			using (writer.WriteIndent())
+				writer.WriteLine("return false;");
+
+			using (writer.WriteBlock()) {
+				writer.WriteLine($"using var left = this.{ctx.Name}.GetEnumerator();");
+				writer.WriteLine($"using var right = other.{ctx.Name}.GetEnumerator();");
+
+				writer.WriteLine("while (left.MoveNext() && right.MoveNext())");
+				using (writer.WriteBlock()) {
+					writer.WriteLine($"if (!global::System.Collections.Generic.EqualityComparer<{ctx.SpecialInfo}>.Default.Equals(left.Current, right.Current))");
+					using (writer.WriteIndent())
+						writer.WriteLine("return false;");
+				}
+			}
+		}
+
+		static void WriteIReadOnlyListPropertyEquals(IndentedStringBuilder writer, in RecordPropertyContext ctx) {
+			writer.WriteLine($"if (this.{ctx.Name}.Count != other.{ctx.Name}.Count)");
+			using (writer.WriteIndent())
+				writer.WriteLine("return false;");
+
+			writer.WriteLine($"for (int i = 0, c = this.{ctx.Name}.Count; i < c; i++)");
+			using (writer.WriteBlock()) {
+				writer.WriteLine($"if (!global::System.Collections.Generic.EqualityComparer<{ctx.SpecialInfo}>.Default.Equals(this.{ctx.Name}[i], other.{ctx.Name}[i]))");
+				using (writer.WriteIndent())
+					writer.WriteLine("return false;");
+			}
+		}
+
+		static void WriteArrayPropertyEquals(IndentedStringBuilder writer, in RecordPropertyContext ctx) {
+			writer.WriteLine($"if (this.{ctx.Name}.Length != other.{ctx.Name}.Length)");
+			using (writer.WriteIndent())
+				writer.WriteLine("return false;");
+
+			using (writer.WriteBlock()) {
+				writer.WriteLine($"var left = this.{ctx.Name}.GetEnumerator();");
+				writer.WriteLine($"var right = other.{ctx.Name}.GetEnumerator();");
+
+				writer.WriteLine("while (left.MoveNext() && right.MoveNext())");
+				using (writer.WriteBlock()) {
+					writer.WriteLine("if (!object.Equals(left.Current, right.Current))");
+					using (writer.WriteIndent())
+						writer.WriteLine("return false;");
+				}
+			}
+		}
+
+		static void WriteNormalPropertyGetHashCode(TextWriter writer, in RecordPropertyContext ctx) {
+			writer.WriteLine($"hashCode += global::System.Collections.Generic.EqualityComparer<{ctx.TypeName}>.Default.GetHashCode(this.{ctx.Name}) * favoriteNumber;");
+		}
+
+		static void WriteIEnumerablePropertyGetHashCode(IndentedStringBuilder writer, in RecordPropertyContext ctx) {
+			writer.WriteLine($"if (this.{ctx.Name} != null)");
+			using (writer.WriteBlock()) {
+				writer.WriteLine($"using var enumerator = this.{ctx.Name}.GetEnumerator();");
+
+				writer.WriteLine("while (enumerator.MoveNext())");
+				// ReSharper disable once RemoveRedundantBraces
+				using (writer.WriteBlock()) {
+					// ReSharper disable once ConvertIfStatementToConditionalTernaryExpression
+					if (ctx.SpecialInfo is not null)
 						writer.WriteLine($"hashCode += global::System.Collections.Generic.EqualityComparer<{ctx.SpecialInfo}>.Default.GetHashCode(enumerator.Current) * favoriteNumber;");
-				    else
-					    writer.WriteLine("hashCode += (enumerator.Current?.GetHashCode() ?? 0) * favoriteNumber;");
-			    }
-		    }
-	    }
-	    
-	    static void WriteICollectionPropertyGetHashCode(IndentedStringBuilder writer, in RecordPropertyContext ctx) {
-		    writer.WriteLine($"if (this.{ctx.Name} != null)");
-		    using (writer.WriteBlock()) {
-			    writer.WriteLine($"var enumerator = this.{ctx.Name}.GetEnumerator();");
-			    
-			    writer.WriteLine("while (enumerator.MoveNext())");
-			    // ReSharper disable once RemoveRedundantBraces
-			    using (writer.WriteBlock()) {
-				    // ReSharper disable once ConvertIfStatementToConditionalTernaryExpression
-				    if (ctx.SpecialInfo is not null)
-					    writer.WriteLine($"hashCode += global::System.Collections.Generic.EqualityComparer<{ctx.SpecialInfo}>.Default.GetHashCode(enumerator.Current) * favoriteNumber;");
-				    else
-					    writer.WriteLine("hashCode += (enumerator.Current?.GetHashCode() ?? 0) * favoriteNumber;");
-			    }
-			    
-			    writer.WriteLine("(enumerator as global::System.IDisposable)?.Dispose();");
-		    }
-	    }
-	    
-	    static void WriteIReadOnlyCollectionPropertyGetHashCode(IndentedStringBuilder writer, in RecordPropertyContext ctx) {
-		    writer.WriteLine($"if (this.{ctx.Name} != null)");
-		    using (writer.WriteBlock()) {
-			    writer.WriteLine($"using var enumerator = this.{ctx.Name}.GetEnumerator();");
-			    
-			    writer.WriteLine("while (enumerator.MoveNext())");
-			    using (writer.WriteBlock())
-				    writer.WriteLine($"hashCode += global::System.Collections.Generic.EqualityComparer<{ctx.SpecialInfo}>.Default.GetHashCode(enumerator.Current) * favoriteNumber;");
-		    }
-	    }
-        
-	    static void WriteIReadOnlyListPropertyGetHashCode(IndentedStringBuilder writer, in RecordPropertyContext ctx) {
-		    writer.WriteLine($"if (this.{ctx.Name} != null)");
-		    using (writer.WriteBlock()) {
-			    writer.WriteLine($"for (int i = 0, c = this.{ctx.Name}.Count; i < c; i++)");
-			    using (writer.WriteBlock())
-				    writer.WriteLine($"hashCode += global::System.Collections.Generic.EqualityComparer<{ctx.SpecialInfo}>.Default.GetHashCode(this.{ctx.Name}[i]) * favoriteNumber;");
-		    }
-	    }
-	    
-	    static void WriteArrayPropertyGetHashCode(IndentedStringBuilder writer, in RecordPropertyContext ctx) {
-		    writer.WriteLine($"if (this.{ctx.Name} != null)");
-		    using (writer.WriteBlock()) {
-			    writer.WriteLine($"var enumerator = this.{ctx.Name}.GetEnumerator();");
-			    
-			    writer.WriteLine("while (enumerator.MoveNext())");
-			    using (writer.WriteBlock())
-				    writer.WriteLine("hashCode += (enumerator.Current?.GetHashCode() ?? 0) * favoriteNumber;");
-		    }
-	    }
+					else
+						writer.WriteLine("hashCode += (enumerator.Current?.GetHashCode() ?? 0) * favoriteNumber;");
+				}
+			}
+		}
+
+		static void WriteICollectionPropertyGetHashCode(IndentedStringBuilder writer, in RecordPropertyContext ctx) {
+			writer.WriteLine($"if (this.{ctx.Name} != null)");
+			using (writer.WriteBlock()) {
+				writer.WriteLine($"var enumerator = this.{ctx.Name}.GetEnumerator();");
+
+				writer.WriteLine("while (enumerator.MoveNext())");
+				// ReSharper disable once RemoveRedundantBraces
+				using (writer.WriteBlock()) {
+					// ReSharper disable once ConvertIfStatementToConditionalTernaryExpression
+					if (ctx.SpecialInfo is not null)
+						writer.WriteLine($"hashCode += global::System.Collections.Generic.EqualityComparer<{ctx.SpecialInfo}>.Default.GetHashCode(enumerator.Current) * favoriteNumber;");
+					else
+						writer.WriteLine("hashCode += (enumerator.Current?.GetHashCode() ?? 0) * favoriteNumber;");
+				}
+
+				writer.WriteLine("(enumerator as global::System.IDisposable)?.Dispose();");
+			}
+		}
+
+		static void WriteIReadOnlyCollectionPropertyGetHashCode(IndentedStringBuilder writer, in RecordPropertyContext ctx) {
+			writer.WriteLine($"if (this.{ctx.Name} != null)");
+			using (writer.WriteBlock()) {
+				writer.WriteLine($"using var enumerator = this.{ctx.Name}.GetEnumerator();");
+
+				writer.WriteLine("while (enumerator.MoveNext())");
+				using (writer.WriteBlock())
+					writer.WriteLine($"hashCode += global::System.Collections.Generic.EqualityComparer<{ctx.SpecialInfo}>.Default.GetHashCode(enumerator.Current) * favoriteNumber;");
+			}
+		}
+
+		static void WriteIReadOnlyListPropertyGetHashCode(IndentedStringBuilder writer, in RecordPropertyContext ctx) {
+			writer.WriteLine($"if (this.{ctx.Name} != null)");
+			using (writer.WriteBlock()) {
+				writer.WriteLine($"for (int i = 0, c = this.{ctx.Name}.Count; i < c; i++)");
+				using (writer.WriteBlock())
+					writer.WriteLine($"hashCode += global::System.Collections.Generic.EqualityComparer<{ctx.SpecialInfo}>.Default.GetHashCode(this.{ctx.Name}[i]) * favoriteNumber;");
+			}
+		}
+
+		static void WriteArrayPropertyGetHashCode(IndentedStringBuilder writer, in RecordPropertyContext ctx) {
+			writer.WriteLine($"if (this.{ctx.Name} != null)");
+			using (writer.WriteBlock()) {
+				writer.WriteLine($"var enumerator = this.{ctx.Name}.GetEnumerator();");
+
+				writer.WriteLine("while (enumerator.MoveNext())");
+				using (writer.WriteBlock())
+					writer.WriteLine("hashCode += (enumerator.Current?.GetHashCode() ?? 0) * favoriteNumber;");
+			}
+		}
 	}
 
 	private static ITypeSymbol? GetType(ISymbol symbol) {
@@ -378,7 +394,7 @@ file readonly record struct RecordPropertyContext {
 	public string TypeName { get; }
 	public RecordPropertyType PropertyType { get; }
 	public object? SpecialInfo { get; }
-	
+
 	public RecordPropertyContext(Compilation compilation, (ISymbol, ITypeSymbol) symbol) {
 		Name = symbol.Item1.Name;
 		TypeName = symbol.Item2.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
@@ -402,7 +418,7 @@ file readonly record struct RecordPropertyContext {
 
 		for (var baseTypeSymbol = symbol.Item2; baseTypeSymbol != null; baseTypeSymbol = baseTypeSymbol.BaseType) {
 			var originalDefinitionSymbol = baseTypeSymbol.OriginalDefinition;
-            
+
 			if (SymbolEqualityComparer.Default.Equals(originalDefinitionSymbol, arraySymbol))
 				return RecordPropertyType.Array;
 		}
@@ -410,17 +426,17 @@ file readonly record struct RecordPropertyContext {
 		// ReSharper disable once ForeachCanBePartlyConvertedToQueryUsingAnotherGetEnumerator
 		foreach (var interfaceSymbol in symbol.Item2.AllInterfaces.Prepend((INamedTypeSymbol)firstType)) {
 			var originalDefinitionSymbol = interfaceSymbol.OriginalDefinition;
-			
+
 			if (SymbolEqualityComparer.Default.Equals(originalDefinitionSymbol, readOnlyList1Symbol)) {
 				specialInfo = interfaceSymbol.TypeArguments[0].ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
 				return RecordPropertyType.IReadOnlyList_1;
 			}
-			
+
 			if (SymbolEqualityComparer.Default.Equals(originalDefinitionSymbol, readOnlyCollection1Symbol)) {
 				specialInfo = interfaceSymbol.TypeArguments[0].ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
 				return RecordPropertyType.IReadOnlyCollection_1;
 			}
-			
+
 			if (SymbolEqualityComparer.Default.Equals(originalDefinitionSymbol, collectionSymbol))
 				return RecordPropertyType.ICollection;
 
@@ -432,7 +448,7 @@ file readonly record struct RecordPropertyContext {
 			if (SymbolEqualityComparer.Default.Equals(originalDefinitionSymbol, enumerableSymbol))
 				return RecordPropertyType.IEnumerable;
 		}
-		
+
 		return RecordPropertyType.Normal;
 	}
 }

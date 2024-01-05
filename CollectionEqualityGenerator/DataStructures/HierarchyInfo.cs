@@ -1,7 +1,18 @@
-﻿// Copyright 2023-2024 BasicallyIAmFox
-// 
-//    Licensed under the CLA (the "License")
-//    See LICENSE.txt for more info.
+﻿//
+//    Copyright 2023-2024 BasicallyIAmFox
+//
+//    Licensed under the Apache License, Version 2.0 (the "License")
+//    you may not use this file except in compliance with the License.
+//    You may obtain a copy of the License at
+//
+//        http://www.apache.org/licenses/LICENSE-2.0
+//
+//    Unless required by applicable law or agreed to in writing, software
+//    distributed under the License is distributed on an "AS IS" BASIS,
+//    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//    See the License for the specific language governing permissions and
+//    limitations under the License.
+//
 
 using Microsoft.CodeAnalysis;
 using System;
@@ -68,7 +79,7 @@ public readonly struct HierarchyInfo : IEquatable<HierarchyInfo> {
 
 		_hierarchyTypeInfos = hiBuilder.ToImmutable();
 	}
-	
+
 	[SuppressMessage("ReSharper", "RemoveRedundantBraces")]
 	private static void PopulateBuilder(ISymbol symbol, ImmutableArray<HierarchyTypeInfo>.Builder builder) {
 		for (var containingSymbol = symbol; containingSymbol != null; containingSymbol = containingSymbol.ContainingSymbol) {
@@ -78,8 +89,7 @@ public readonly struct HierarchyInfo : IEquatable<HierarchyInfo> {
 					ITypeSymbol { IsReferenceType: true, IsRecord: true } => HierarchyType.RecordClass,
 					ITypeSymbol { IsValueType: true, IsRefLikeType: false, IsRecord: false } => HierarchyType.Struct,
 					ITypeSymbol { IsValueType: true, IsRefLikeType: false, IsRecord: true } => HierarchyType.RecordStruct,
-					ITypeSymbol { IsValueType: true, IsRefLikeType: true, IsRecord: false } => HierarchyType.RefStruct,
-					{ IsNamespace: true } and not INamespaceSymbol { IsGlobalNamespace: true } => HierarchyType.Namespace,
+					ITypeSymbol { IsValueType: true, IsRefLikeType: true, IsRecord: false } => HierarchyType.RefStruct, { IsNamespace: true } and not INamespaceSymbol { IsGlobalNamespace: true } => HierarchyType.Namespace,
 					_ => HierarchyType.Unknown
 				}));
 			}

@@ -1,0 +1,1 @@
+Licensed under the [Apache License](https://github.com/BasicallyIAmFox/CollectionEqualityGenerator/blob/master/LICENSE.txt).
