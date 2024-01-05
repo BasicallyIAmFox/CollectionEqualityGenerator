@@ -20,7 +20,7 @@
     </ItemGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\Collection_Equality_Generator\Collection_Equality_Generator.csproj"/>
+        <ProjectReference Include="..\CollectionEqualityGenerator\CollectionEqualityGenerator.csproj"/>
     </ItemGroup>
 
 

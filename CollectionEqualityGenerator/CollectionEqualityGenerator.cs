@@ -88,6 +88,9 @@ public sealed class CollectionEqualityGenerator : IIncrementalGenerator {
 						    case RecordPropertyType.IReadOnlyList_1:
 							    WriteIReadOnlyListPropertyEquals(writer, in property);
 							    break;
+						    case RecordPropertyType.Array:
+							    WriteArrayPropertyEquals(writer, in property);
+							    break;
 						    default:
 							    throw new ArgumentOutOfRangeException();
 					    }
@@ -119,6 +122,9 @@ public sealed class CollectionEqualityGenerator : IIncrementalGenerator {
 							    break;
 						    case RecordPropertyType.IReadOnlyList_1:
 							    WriteIReadOnlyListPropertyGetHashCode(writer, in property);
+							    break;
+						    case RecordPropertyType.Array:
+							    WriteArrayPropertyGetHashCode(writer, in property);
 							    break;
 						    default:
 							    throw new ArgumentOutOfRangeException();
@@ -220,6 +226,24 @@ public sealed class CollectionEqualityGenerator : IIncrementalGenerator {
 		    }
 	    }
 	    
+	    static void WriteArrayPropertyEquals(IndentedStringBuilder writer, in RecordPropertyContext ctx) {
+		    writer.WriteLine($"if (this.{ctx.Name}.Length != other.{ctx.Name}.Length)");
+		    using (writer.WriteIndent())
+			    writer.WriteLine("return false;");
+
+		    using (writer.WriteBlock()) {
+			    writer.WriteLine($"var left = this.{ctx.Name}.GetEnumerator();");
+			    writer.WriteLine($"var right = other.{ctx.Name}.GetEnumerator();");
+			    
+			    writer.WriteLine("while (left.MoveNext() && right.MoveNext())");
+			    using (writer.WriteBlock()) {
+				    writer.WriteLine("if (!object.Equals(left.Current, right.Current))");
+				    using (writer.WriteIndent())
+					    writer.WriteLine("return false;");
+			    }
+		    }
+	    }
+
 	    static void WriteNormalPropertyGetHashCode(TextWriter writer, in RecordPropertyContext ctx) {
 		    writer.WriteLine($"hashCode += global::System.Collections.Generic.EqualityComparer<{ctx.TypeName}>.Default.GetHashCode(this.{ctx.Name}) * favoriteNumber;");
 	    }
@@ -279,6 +303,17 @@ public sealed class CollectionEqualityGenerator : IIncrementalGenerator {
 				    writer.WriteLine($"hashCode += global::System.Collections.Generic.EqualityComparer<{ctx.SpecialInfo}>.Default.GetHashCode(this.{ctx.Name}[i]) * favoriteNumber;");
 		    }
 	    }
+	    
+	    static void WriteArrayPropertyGetHashCode(IndentedStringBuilder writer, in RecordPropertyContext ctx) {
+		    writer.WriteLine($"if (this.{ctx.Name} != null)");
+		    using (writer.WriteBlock()) {
+			    writer.WriteLine($"var enumerator = this.{ctx.Name}.GetEnumerator();");
+			    
+			    writer.WriteLine("while (enumerator.MoveNext())");
+			    using (writer.WriteBlock())
+				    writer.WriteLine("hashCode += (enumerator.Current?.GetHashCode() ?? 0) * favoriteNumber;");
+		    }
+	    }
 	}
 
 	private static ITypeSymbol? GetType(ISymbol symbol) {
@@ -319,6 +354,10 @@ file enum RecordPropertyType {
 	/// <see cref="System.Collections.Generic.IReadOnlyList{T}"/>
 	/// </summary>
 	IReadOnlyList_1,
+	/// <summary>
+	/// <see cref="System.Array"/>
+	/// </summary>
+	Array,
 }
 
 file readonly record struct RecordPropertyContext {
@@ -340,14 +379,23 @@ file readonly record struct RecordPropertyContext {
 		var collectionSymbol = compilation.GetTypeByMetadataName("System.Collections.ICollection");
 		var readOnlyCollection1Symbol = compilation.GetTypeByMetadataName("System.Collections.Generic.IReadOnlyCollection`1");
 		var readOnlyList1Symbol = compilation.GetTypeByMetadataName("System.Collections.Generic.IReadOnlyList`1");
+		var arraySymbol = compilation.GetTypeByMetadataName("System.Array");
 
 		specialInfo = null;
 
-		if (symbol.Item2 is IErrorTypeSymbol)
+		var firstType = symbol.Item2 is IArrayTypeSymbol arrayTypeSymbol ? arrayTypeSymbol.ElementType : symbol.Item2;
+		if (firstType is not INamedTypeSymbol)
 			return RecordPropertyType.Normal;
 
+		for (var baseTypeSymbol = symbol.Item2; baseTypeSymbol != null; baseTypeSymbol = baseTypeSymbol.BaseType) {
+			var originalDefinitionSymbol = baseTypeSymbol.OriginalDefinition;
+            
+			if (SymbolEqualityComparer.Default.Equals(originalDefinitionSymbol, arraySymbol))
+				return RecordPropertyType.Array;
+		}
+
 		// ReSharper disable once ForeachCanBePartlyConvertedToQueryUsingAnotherGetEnumerator
-		foreach (var interfaceSymbol in symbol.Item2.AllInterfaces.Prepend((INamedTypeSymbol)symbol.Item2)) {
+		foreach (var interfaceSymbol in symbol.Item2.AllInterfaces.Prepend((INamedTypeSymbol)firstType)) {
 			var originalDefinitionSymbol = interfaceSymbol.OriginalDefinition;
 			
 			if (SymbolEqualityComparer.Default.Equals(originalDefinitionSymbol, readOnlyList1Symbol)) {

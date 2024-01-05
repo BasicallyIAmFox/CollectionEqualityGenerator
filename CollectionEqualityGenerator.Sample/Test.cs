@@ -12,7 +12,8 @@ partial record LotOfLists(
 	IReadOnlyCollection<int> Numbers3,
 	ICollection Something,
 	IEnumerable<int> Numbers4,
-	int Singleton);
+	int Singleton,
+	int[] Array);
 
 [CollectionEquality]
 partial record Foo(List<int> Numbers);
@@ -20,8 +21,8 @@ partial record Foo(List<int> Numbers);
 internal class Program
 {
 	public static void Main(string[] args) {
-		var left = new Foo([1, 2, 3]);
-		var right = new Foo([1, 2, 3]);
+		var left = new Foo(new() {1, 2, 3});
+		var right = new Foo(new() {1, 2, 3});
 		
 		Console.WriteLine(left.Equals(right));
 	}
