@@ -38,6 +38,23 @@ partial record LotOfLists(
 [CollectionEquality]
 partial record Foo(List<int> Numbers);
 
+[CollectionEquality]
+partial record struct LotOfListsStruct(
+	List<int> Numbers1,
+	IReadOnlyList<int> Numbers2,
+	IReadOnlyCollection<int> Numbers3,
+	ICollection Something,
+	IEnumerable<int> Numbers4,
+	int Singleton,
+	int[] Array) {
+	private IEnumerable<char> notIgnored;
+
+	public IEnumerable<char> Ignored => notIgnored;
+}
+
+[CollectionEquality]
+partial record struct FooStruct(List<int> Numbers);
+
 internal class Program {
 	public static void Main() {
 		var left = new Foo(new() { 1, 2, 3 });

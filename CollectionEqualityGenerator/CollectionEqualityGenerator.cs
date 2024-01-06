@@ -51,6 +51,7 @@ public sealed class CollectionEqualityGenerator : IIncrementalGenerator {
 				string symbolName = symbol.ToDisplayString(QualifiedOmittedGlobalAndGenerics);
 				string symbolTypeName = symbol.ToDisplayString(QualifiedIncludeGenerics);
 				var symbolHierarchy = symbol.RetrieveHierarchyTree();
+				bool isValueType = symbol.IsValueType;
 
 				var symbolMembersArray = symbol.GetMembers()
 					.Where(symbol => symbol is IFieldSymbol or IPropertySymbol)
@@ -76,7 +77,7 @@ public sealed class CollectionEqualityGenerator : IIncrementalGenerator {
 					.Select(symbolType => new RecordPropertyContext(compilation, symbolType))
 					.ToImmutableArray();
 
-				return new CollectionEqualityProvider(symbolName, symbolTypeName, symbolHierarchy, symbolMembersArray);
+				return new CollectionEqualityProvider(symbolName, symbolTypeName, symbolHierarchy, symbolMembersArray, isValueType);
 			});
 
 		ctx.RegisterSourceOutput(provider, static (context, sourceProvider) => {
@@ -93,11 +94,21 @@ public sealed class CollectionEqualityGenerator : IIncrementalGenerator {
 			writer.WriteLine("#nullable enable");
 
 			using (writer.WriteHierarchyInfo(provider.Hierarchy)) {
-				writer.WriteLine($"public virtual bool Equals({provider.TypeName}? other)");
+				if (!provider.IsValueType)
+					writer.WriteLine($"public virtual bool Equals({provider.TypeName}? other)");
+				else
+					writer.WriteLine($"public readonly bool Equals({provider.TypeName} other)");
+
 				using (writer.WriteBlock()) {
-					writer.WriteLine("if (other == null)");
-					using (writer.WriteIndent())
-						writer.WriteLine("return false;");
+					if (!provider.IsValueType) {
+						writer.WriteLine("if (other == null)");
+						using (writer.WriteIndent())
+							writer.WriteLine("return false;");
+
+						writer.WriteLine("if (this.EqualityContract != other.EqualityContract)");
+						using (writer.WriteIndent())
+							writer.WriteLine("return false;");
+					}
 
 					foreach (var property in provider.RecordProperties)
 						switch (property.PropertyType) {
@@ -173,6 +184,7 @@ public sealed class CollectionEqualityGenerator : IIncrementalGenerator {
 		}
 
 		static void WriteIEnumerablePropertyEquals(IndentedStringBuilder writer, in RecordPropertyContext ctx) {
+			writer.WriteLine($"if (this.{ctx.Name} != other.{ctx.Name})");
 			using (writer.WriteBlock()) {
 				writer.WriteLine($"using var left = this.{ctx.Name}.GetEnumerator();");
 				writer.WriteLine($"using var right = other.{ctx.Name}.GetEnumerator();");
@@ -204,11 +216,12 @@ public sealed class CollectionEqualityGenerator : IIncrementalGenerator {
 		}
 
 		static void WriteICollectionPropertyEquals(IndentedStringBuilder writer, in RecordPropertyContext ctx) {
-			writer.WriteLine($"if (this.{ctx.Name}.Count != other.{ctx.Name}.Count)");
-			using (writer.WriteIndent())
-				writer.WriteLine("return false;");
-
+			writer.WriteLine($"if (this.{ctx.Name} != other.{ctx.Name})");
 			using (writer.WriteBlock()) {
+				writer.WriteLine($"if (this.{ctx.Name}.Count != other.{ctx.Name}.Count)");
+				using (writer.WriteIndent())
+					writer.WriteLine("return false;");
+
 				writer.WriteLine($"var left = this.{ctx.Name}.GetEnumerator();");
 				writer.WriteLine($"var right = other.{ctx.Name}.GetEnumerator();");
 
@@ -225,11 +238,12 @@ public sealed class CollectionEqualityGenerator : IIncrementalGenerator {
 		}
 
 		static void WriteIReadOnlyCollectionPropertyEquals(IndentedStringBuilder writer, in RecordPropertyContext ctx) {
-			writer.WriteLine($"if (this.{ctx.Name}.Count != other.{ctx.Name}.Count)");
-			using (writer.WriteIndent())
-				writer.WriteLine("return false;");
-
+			writer.WriteLine($"if (this.{ctx.Name} != other.{ctx.Name})");
 			using (writer.WriteBlock()) {
+				writer.WriteLine($"if (this.{ctx.Name}.Count != other.{ctx.Name}.Count)");
+				using (writer.WriteIndent())
+					writer.WriteLine("return false;");
+
 				writer.WriteLine($"using var left = this.{ctx.Name}.GetEnumerator();");
 				writer.WriteLine($"using var right = other.{ctx.Name}.GetEnumerator();");
 
@@ -243,24 +257,28 @@ public sealed class CollectionEqualityGenerator : IIncrementalGenerator {
 		}
 
 		static void WriteIReadOnlyListPropertyEquals(IndentedStringBuilder writer, in RecordPropertyContext ctx) {
-			writer.WriteLine($"if (this.{ctx.Name}.Count != other.{ctx.Name}.Count)");
-			using (writer.WriteIndent())
-				writer.WriteLine("return false;");
-
-			writer.WriteLine($"for (int i = 0, c = this.{ctx.Name}.Count; i < c; i++)");
+			writer.WriteLine($"if (this.{ctx.Name} != other.{ctx.Name})");
 			using (writer.WriteBlock()) {
-				writer.WriteLine($"if (!global::System.Collections.Generic.EqualityComparer<{ctx.SpecialInfo}>.Default.Equals(this.{ctx.Name}[i], other.{ctx.Name}[i]))");
+				writer.WriteLine($"if (this.{ctx.Name}.Count != other.{ctx.Name}.Count)");
 				using (writer.WriteIndent())
 					writer.WriteLine("return false;");
+
+				writer.WriteLine($"for (int i = 0, c = this.{ctx.Name}.Count; i < c; i++)");
+				using (writer.WriteBlock()) {
+					writer.WriteLine($"if (!global::System.Collections.Generic.EqualityComparer<{ctx.SpecialInfo}>.Default.Equals(this.{ctx.Name}[i], other.{ctx.Name}[i]))");
+					using (writer.WriteIndent())
+						writer.WriteLine("return false;");
+				}
 			}
 		}
 
 		static void WriteArrayPropertyEquals(IndentedStringBuilder writer, in RecordPropertyContext ctx) {
-			writer.WriteLine($"if (this.{ctx.Name}.Length != other.{ctx.Name}.Length)");
-			using (writer.WriteIndent())
-				writer.WriteLine("return false;");
-
+			writer.WriteLine($"if (this.{ctx.Name} != other.{ctx.Name})");
 			using (writer.WriteBlock()) {
+				writer.WriteLine($"if (this.{ctx.Name}.Length != other.{ctx.Name}.Length)");
+				using (writer.WriteIndent())
+					writer.WriteLine("return false;");
+
 				writer.WriteLine($"var left = this.{ctx.Name}.GetEnumerator();");
 				writer.WriteLine($"var right = other.{ctx.Name}.GetEnumerator();");
 
@@ -358,7 +376,8 @@ file readonly record struct CollectionEqualityProvider(
 	in string Name,
 	in string TypeName,
 	in HierarchyInfo Hierarchy,
-	in EquatableArray<RecordPropertyContext> RecordProperties);
+	in EquatableArray<RecordPropertyContext> RecordProperties,
+	in bool IsValueType);
 
 [SuppressMessage("ReSharper", "InconsistentNaming")]
 file enum RecordPropertyType {
