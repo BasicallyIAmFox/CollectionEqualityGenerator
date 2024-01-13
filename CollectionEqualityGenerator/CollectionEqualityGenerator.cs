@@ -54,7 +54,10 @@ public sealed class CollectionEqualityGenerator : IIncrementalGenerator {
 				bool isValueType = symbol.IsValueType;
 
 				var symbolMembersArray = symbol.GetMembers()
-					.Where(symbol => symbol is IFieldSymbol or IPropertySymbol)
+					.Where(symbol => symbol
+						// We don't want any static or constants to be included.
+						is IFieldSymbol { IsStatic: false, IsConst: false }
+						or IPropertySymbol { IsStatic: false })
 					.Where(symbol => {
 						// We don't want implicit (aka compiler generated) symbols.
 						// They often have weird/uncompilable names, such as:

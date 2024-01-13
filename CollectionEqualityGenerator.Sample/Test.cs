@@ -36,7 +36,10 @@ partial record LotOfLists(
 }
 
 [CollectionEquality]
-partial record Foo(List<int> Numbers);
+partial record Foo(List<int> Numbers) {
+	public const int ConstantValue = 5;
+	public static int StaticValue = 5;
+}
 
 [CollectionEquality]
 partial record struct LotOfListsStruct(
